@@ -44,5 +44,10 @@ int main(int argc, char** argv) {
   mruby.set_global_variable("$a", 4.5);
   mruby.def_function("myfunction", &f);
   mruby.def_function("f2", &f2);
+  std::function<double(int,float)> fun = [](int x, float y) -> double {
+        return x+y;
+      };
+
+  mruby.def_function("mylambda", fun);
   auto obj = mruby.execute(script.c_str());
 }

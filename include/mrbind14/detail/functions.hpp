@@ -26,7 +26,10 @@ inline void raise_invalid_nargs(
     mrb_value func_name,
     int narg,
     int nparam) {
-  // TODO
+  mrb_raisef(mrb, E_ARGUMENT_ERROR, "'%S': wrong number of arguments (%S for %S)",
+             func_name,
+             mrb_fixnum_value(narg),
+             mrb_fixnum_value(nparam));
 }
 
 inline void raise_invalid_type(
@@ -34,7 +37,11 @@ inline void raise_invalid_type(
     int parameter_index,
     const char* required_type_name,
     mrb_value value) {
-  // TODO
+  const char * argument_class_name = mrb_obj_classname(mrb, value);
+  mrb_raisef(mrb, E_TYPE_ERROR, "Cannot convert %S into %S, argument %S(%S)",
+             mrb_str_new_cstr(mrb, argument_class_name),
+             mrb_str_new_cstr(mrb, required_type_name),
+             mrb_fixnum_value(parameter_index + 1), value);
 }
 
 /// Helper type trait to detect function pointers
@@ -67,7 +74,22 @@ struct make_function_return_mrb_value<R(*)(P...)> {
   }
 };
 
-/// Helper structure to wrap C-style function pointers and convert arguments/return values.
+template<typename ... P>
+struct make_function_return_mrb_value<std::function<void(P...)>> {
+  static mrb_value call(mrb_state*, const std::function<void(P...)>& function, P&&... params) {
+    function(std::forward<P>(params)...);
+    return mrb_nil_value();
+  }
+};
+
+template<typename R, typename ... P>
+struct make_function_return_mrb_value<std::function<R(P...)>> {
+  static mrb_value call(mrb_state* mrb, const std::function<R(P...)>& function, P&&... params) {
+    return value_from_cpp<R>(mrb, function(std::forward<P>(params)...) );
+  }
+};
+
+/// Helper structure to wrap functions and convert arguments/return values.
 template<typename Function>
 struct function_binder {};
 
@@ -104,7 +126,40 @@ struct function_binder<R (*)(P...)> {
   }
 };
 
-/// Defines a function in a provided module
+template<typename R, typename ... P>
+struct function_binder<std::function<R(P...)>> {
+  
+  static constexpr int NPARAM = sizeof...(P);
+
+  template<size_t ... I>
+  static mrb_value apply_function(
+      mrb_state* mrb,
+      const std::function<R(P...)>& fp,
+      mrb_value* args,
+      std::index_sequence<I...>) {
+    return make_function_return_mrb_value<std::function<R(P...)>>::call(
+        mrb, fp, type_converter<P>::convert(args[I])...);
+  }
+
+  static mrb_value call(mrb_state* mrb, mrb_value self) {
+    mrb_value* args;
+    int narg;
+    mrb_get_args(mrb, "*", &args, &narg);
+    if(narg != NPARAM)
+      raise_invalid_nargs(mrb, mrb_cfunc_env_get(mrb, 1), narg, NPARAM);
+    mrb_value cfunc = mrb_cfunc_env_get(mrb, 0);
+    auto fp = static_cast<std::function<R(P...)>*>(mrb_cptr(cfunc));
+    try {
+      return apply_function(mrb, *fp, args, std::index_sequence_for<P...>());
+    } catch(...) {
+      // TODO translate exception
+      throw;
+    }
+    return mrb_nil_value();
+  }
+};
+
+/// Defines a function in a provided module, using a C-style function pointer
 template<typename Function, typename ... Extra>
 typename std::enable_if<is_function_pointer<Function>::value, void>::type
 def_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function, const Extra&... extra) {
@@ -123,6 +178,33 @@ def_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function,
   }
 }
 
+template<typename R, typename ... P, typename ... Extra>
+void def_function(mrb_state* mrb, RClass* mod, const char* name, 
+             const std::function<R(P...)>& function, const Extra&... extra) {
+  mrb_sym func_name_s = mrb_intern_cstr(mrb, name);
+  // XXX should find a way to destroy the created function object when the mrb_state is destroyed
+  mrb_value env[] = {
+    mrb_cptr_value(mrb, static_cast<void*>(new std::function<R(P...)>(function))),
+    mrb_symbol_value(func_name_s),
+  };
+  RProc* proc = mrb_proc_new_cfunc_with_env(mrb,
+      function_binder<std::function<R(P...)>>::call, 2, env);
+  mrb_method_t method;
+  MRB_METHOD_FROM_PROC(method, proc);
+  if(mod == mrb->kernel_module) {
+    mrb_define_method_raw(mrb, mod, func_name_s, method);
+  } else {
+    mrb_define_class_method_raw(mrb, mod, func_name_s, method);
+  }
+}
+
+#if 0
+template<typename Function, typename ... Extra>
+typename std::enable_if<!is_function_pointer<Function>::value, void>::type
+def_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function, const Extra&... extra) {
+  def_function(
+}
+#endif
 }
 
 }
