@@ -39,6 +39,7 @@ int main(int argc, char** argv) {
     exit(-1);
   }
 
+  try {
   mrbind14::interpreter mruby;
   mruby.def_const("VAL", 42);
   mruby.set_global_variable("$a", 4.5);
@@ -47,7 +48,9 @@ int main(int argc, char** argv) {
   std::function<double(int,float)> fun = [](int x, float y) -> double {
         return x+y;
       };
-
   mruby.def_function("mylambda", fun);
   auto obj = mruby.execute(script.c_str());
+  } catch(const std::exception& ex) {
+    std::cerr << "Exception: " << ex.what() << std::endl;
+  }
 }

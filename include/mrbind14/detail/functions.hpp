@@ -44,6 +44,40 @@ inline void raise_invalid_type(
              mrb_fixnum_value(parameter_index + 1), value);
 }
 
+/// Helper structure to check the types of a series of values
+template<class ... P>
+struct type_checker {};
+
+template<>
+struct type_checker<> {
+  static void check(mrb_state* mrb, int i, mrb_value* args) {}
+};
+
+template<class P>
+struct type_checker<P> {
+  static void check(mrb_state* mrb, int i, mrb_value* args) {
+    if(!check_type<P>(args[i])) {
+      raise_invalid_type(mrb, i, "???", args[i]); //XXX
+    }
+  }
+};
+
+template<class P1, class ... P>
+struct type_checker<P1, P...> {
+  static void check(mrb_state* mrb, int i, mrb_value* args) {
+    if(!check_type<P1>(args[i])) {
+      raise_invalid_type(mrb, i, "???", args[i]); //XXX
+    } else {
+      type_checker<P...>::check(mrb, i+1, args);
+    }
+  }
+};
+
+template<class ... P>
+void check_arg_types(mrb_state* mrb, mrb_value* args) {
+  type_checker<P...>::check(mrb, 0, args);
+}
+
 /// Helper type trait to detect function pointers
 template<typename T>
 struct is_function_pointer
@@ -114,6 +148,7 @@ struct function_binder<R (*)(P...)> {
     mrb_get_args(mrb, "*", &args, &narg);
     if(narg != NPARAM)
       raise_invalid_nargs(mrb, mrb_cfunc_env_get(mrb, 1), narg, NPARAM);
+    check_arg_types<P...>(mrb, args);
     mrb_value cfunc = mrb_cfunc_env_get(mrb, 0);
     auto fp = (R(*)(P...))(mrb_cptr(cfunc));
     try {
@@ -147,6 +182,7 @@ struct function_binder<std::function<R(P...)>> {
     mrb_get_args(mrb, "*", &args, &narg);
     if(narg != NPARAM)
       raise_invalid_nargs(mrb, mrb_cfunc_env_get(mrb, 1), narg, NPARAM);
+    check_arg_types<P...>(mrb, args);
     mrb_value cfunc = mrb_cfunc_env_get(mrb, 0);
     auto fp = static_cast<std::function<R(P...)>*>(mrb_cptr(cfunc));
     try {
@@ -182,9 +218,10 @@ template<typename R, typename ... P, typename ... Extra>
 void def_function(mrb_state* mrb, RClass* mod, const char* name, 
              const std::function<R(P...)>& function, const Extra&... extra) {
   mrb_sym func_name_s = mrb_intern_cstr(mrb, name);
-  // XXX should find a way to destroy the created function object when the mrb_state is destroyed
+  void* p = mrb_malloc_simple(mrb, sizeof(function));
+  auto fun_ptr = new(p) std::function<R(P...)>(function);
   mrb_value env[] = {
-    mrb_cptr_value(mrb, static_cast<void*>(new std::function<R(P...)>(function))),
+    mrb_cptr_value(mrb, static_cast<void*>(fun_ptr)),
     mrb_symbol_value(func_name_s),
   };
   RProc* proc = mrb_proc_new_cfunc_with_env(mrb,
@@ -198,13 +235,6 @@ void def_function(mrb_state* mrb, RClass* mod, const char* name,
   }
 }
 
-#if 0
-template<typename Function, typename ... Extra>
-typename std::enable_if<!is_function_pointer<Function>::value, void>::type
-def_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function, const Extra&... extra) {
-  def_function(
-}
-#endif
 }
 
 }
