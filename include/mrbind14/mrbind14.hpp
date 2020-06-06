@@ -6,8 +6,11 @@
 #ifndef MRBIND14_HPP_
 #define MRBIND14_HPP_
 
+#include <mrbind14/detail/functions.hpp>
 #include <mruby.h>
 #include <mruby/string.h>
+#include <mruby/value.h>
+#include <mruby/variable.h>
 #include <mruby/compile.h>
 #include <string>
 #include <exception>
@@ -17,11 +20,16 @@ namespace mrbind14 {
 class interpreter;
 class gem;
 class exception;
-template<typename CppClass> class klass;
+template<typename CppClass, typename ... Options> class klass;
 class module;
 class object;
 
 class object {
+
+  friend class interpreter;
+  friend class gem;
+  friend class module;
+  template<typename CppClass, typename ... > friend class klass;
 
   public:
 
@@ -33,7 +41,7 @@ class object {
 
   template<typename T>
   object(mrb_state* mrb, T&& t)
-  : m_value(from_cpp(t)) {}
+  : m_value(value_from_cpp(t)) {}
 
   template<typename T>
   bool convertible_to() const {
@@ -45,7 +53,13 @@ class object {
     if(!check<T>(m_value)) {
       throw std::runtime_error("Invalid type"); // XXX
     }
-    return to_cpp<T>(m_value);
+    return value_to_cpp<T>(m_value);
+  }
+
+  template<typename Function>
+  object& def_singleton_method(Function&& fun) {
+    // TODO
+    return *this;
   }
 
   private:
@@ -56,15 +70,15 @@ class object {
                     std::is_integral<typename std::decay<Integer>::type>::value
                     && !std::is_same<typename std::decay<Integer>::type, bool>::value,
   mrb_value>::type
-  from_cpp(mrb_state*, Integer i) {
+  value_from_cpp(mrb_state*, Integer i) {
     return mrb_fixnum_value(i);
   }
 
   /// Converts a C++ float (float, double, etc.) into a ruby value
   template<typename Float>
   static typename std::enable_if<std::is_floating_point<Float>::value, mrb_value>::type
-  from_cpp(mrb_state*, Float f) {
-    return mrb_float_value(f);
+  value_from_cpp(mrb_state* mrb, Float f) {
+    return mrb_float_value(mrb, f);
   }
 
   /// Checks that the ruby value is convertible to a C++ numeric type
@@ -83,18 +97,18 @@ class object {
                     std::is_arithmetic<Numeric>::value
                     && !std::is_same<Numeric, bool>::value,
   Numeric>::type
-  to_cpp(mrb_value v) {
+  value_to_cpp(mrb_value v) {
     return mrb_fixnum_p(v) ? mrb_fixnum(v) : mrb_float(v);
   }
 
   /// Converts a C++ null-terminated string into a ruby value
-  static mrb_value from_cpp(mrb_state* mrb, const char* str) {
+  static mrb_value value_from_cpp(mrb_state* mrb, const char* str) {
     return mrb_str_new_cstr(mrb, str);
   }
 
   /// Converts a C++ string into a ruby value
-  static mrb_value from_cpp(mrb_state* mrb, const std::string& str) {
-    return from_cpp(mrb, str.c_str());
+  static mrb_value value_from_cpp(mrb_state* mrb, const std::string& str) {
+    return value_from_cpp(mrb, str.c_str());
   }
 
   /// Checks that the ruby value can be converted into a C++ string
@@ -107,12 +121,12 @@ class object {
   /// Converts a ruby value into a C++ string
   template<typename String>
   static typename std::enable_if<std::is_same<String, std::string>::value, std::string>::type
-  to_cpp(mrb_value v) {
+  value_to_cpp(mrb_value v) {
     return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
   }
 
   /// Converts a C++ bool into a ruby bool
-  static mrb_value from_cpp(mrb_state* mrb, bool b) {
+  static mrb_value value_from_cpp(mrb_state* mrb, bool b) {
     return b ? mrb_true_value() : mrb_false_value();
   }
 
@@ -126,7 +140,7 @@ class object {
   /// Converts a ruby value into a bool
   template<typename Bool>
   static constexpr typename std::enable_if<std::is_same<Bool, bool>::value, bool>::type
-  to_cpp(mrb_value v) {
+  value_to_cpp(mrb_value v) {
     return mrb_test(v);
   }
 
@@ -143,7 +157,7 @@ class exception : public object, public std::exception {
   }
 };
 
-template<typename CppClass>
+template<typename CppClass, typename ... Options>
 class klass {
 
   friend class gem;
@@ -151,8 +165,23 @@ class klass {
 
   public:
 
+  template<typename ValueType>
+  module& def_const(const char* name, const ValueType& val) {
+    mrb_define_const(m_mrb,
+                     m_class,
+                     name,
+                     object::value_from_cpp(m_mrb, val));
+    return *this;
+  }
+
   template<typename Function, typename ... Extra>
   klass& def_method(const char* name, Function&& function, const Extra&... extra) {
+    // TODO
+    return *this;
+  }
+
+  template<typename Function, typename ... Extra>
+  klass& def_class_method(const char* name, Function&& function, const Extra&... extra) {
     // TODO
     return *this;
   }
@@ -174,13 +203,20 @@ class klass {
     return def_attr_reader<Type>(name, member).template def_attr_writer<Type>(name, member);
   }
 
+  klass& include_module(const module& mod) {
+    // TODO
+    //mrb_include_module(m_mrb, m_class, mod.m_module);
+    return *this;
+  }
+
   private:
 
   mrb_state* m_mrb;
   std::string m_name;
+  struct RClass *m_class;
 
-  klass(mrb_state* mrb, const char* name)
-  : m_mrb(mrb), m_name(name) {}
+  klass(mrb_state* mrb, struct RClass *cls, const char* name)
+  : m_mrb(mrb), m_name(name), m_class(cls) {}
 
 };
 
@@ -202,18 +238,56 @@ class module {
     return klass<CppClass>(m_mrb, name);
   }
 
+  /**
+   * @brief Defines a module inside this module.
+   *
+   * @param name Name of the new module.
+   *
+   * @return The newly created module.
+   */
   module def_module(const char* name) {
-    // TODO
-    return module(m_mrb, name);
+    auto mod = mrb_define_module_under(m_mrb, m_module, name);
+    return module(m_mrb, mod, name);
+  }
+
+  /**
+   * @brief Defines a constant inside this module.
+   *
+   * @tparam ValueType Type of the value.
+   * @param name Name of the constant.
+   * @param val Value.
+   *
+   * @return A reference to the current module.
+   */
+  template<typename ValueType>
+  module& def_const(const char* name, const ValueType& val) {
+    mrb_define_const(m_mrb,
+                     m_module,
+                     name,
+                     object::value_from_cpp(m_mrb, val));
+    return *this;
+  }
+
+  /**
+   * @brief Includes a module inside the current module.
+   *
+   * @param mod Module.
+   *
+   * @return A reference to the current module.
+   */
+  module& include_module(const module& mod) {
+    mrb_include_module(m_mrb, m_module, mod.m_module);
+    return *this;
   }
 
   private:
 
   mrb_state* m_mrb;
   std::string m_name;
+  struct RClass* m_module;
 
-  module(mrb_state* mrb, const char* name)
-  : m_mrb(mrb), m_name(name) {}
+  module(mrb_state* mrb, struct RClass* mod, const char* name)
+  : m_mrb(mrb), m_name(name), m_module(mod) {}
 
 };
 
@@ -236,19 +310,43 @@ class gem {
 
   template<typename Function, typename ... Extra>
   gem& def_function(const char* name, Function&& function, const Extra&... extra) {
-    // TODO
+    detail::def_function(m_mrb, name, std::forward<Function>(function), extra...);
     return *this;
   }
 
-  template<typename CppClass = void>
+  template<typename CppClass, typename ParentCppClass = void>
   klass<CppClass> def_class(const char* name) {
     // TODO
     return klass<CppClass>(m_mrb, name);
   }
 
+  /**
+   * @brief Defines a module at global scope.
+   *
+   * @param name Name of the new module.
+   *
+   * @return The newly created module.
+   */
   module def_module(const char* name) {
-    // TODO
-    return module(m_mrb, name);
+    auto mod = mrb_define_module(m_mrb, name);
+    return module(m_mrb, mod, name);
+  }
+
+  /**
+   * @brief Defines a constant visible globally.
+   *
+   * @tparam ValueType Type of the value.
+   * @param name Name of the constant.
+   * @param val Value.
+   *
+   * @return A reference to the gem.
+   */
+  template<typename ValueType>
+  gem& def_const(const char* name, const ValueType& val) {
+    mrb_define_const(m_mrb,
+                     m_mrb->kernel_module,
+                     name, object::value_from_cpp(m_mrb, val));
+    return *this;
   }
 
   protected:
@@ -285,6 +383,40 @@ class interpreter : public gem {
     if(m_mrb) mrb_close(m_mrb);
   }
 
+  /**
+   * @brief Sets a global variable in the interpreter.
+   *
+   * @tparam ValueType Type of the value.
+   * @param name Name of the global variable (including $).
+   * @param val Value.
+   */
+  template<typename ValueType>
+  void set_global_variable(const char* name, const ValueType& val) {
+    mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
+    mrb_gv_set(m_mrb, sym, object::value_from_cpp<ValueType>(m_mrb, val));
+  }
+
+  /**
+   * @brief Gets the value of a global variable.
+   *
+   * @tparam ValueType Type of the value.
+   * @param name Name of the global variable (including $).
+   *
+   * @return The value associated with a global variable.
+   */
+  template<typename ValueType>
+  ValueType get_global_variable(const char* name) {
+    mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
+    return object::value_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
+  }
+
+  /**
+   * @brief Executes the given Ruby script, provided as a null-terminated string.
+   *
+   * @param script Ruby script.
+   *
+   * @return The value returned by the Ruby script.
+   */
   object execute(const char* script) {
     auto val = mrb_load_string(m_mrb, script);
     if(m_mrb->exc) {
