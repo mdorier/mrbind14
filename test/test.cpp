@@ -18,6 +18,13 @@ std::string read_file(const char* filename) {
   }
 }
 
+void f() {
+  std::cout << "Yey!" << std::endl;
+}
+double f2(int x, float y) {
+  return y*x*x;
+}
+
 int main(int argc, char** argv) {
   if(argc != 2) {
     std::cerr << "Usage: " << argv[0] << " <script.rb>\n";
@@ -33,18 +40,9 @@ int main(int argc, char** argv) {
   }
 
   mrbind14::interpreter mruby;
+  mruby.def_const("VAL", 42);
+  mruby.set_global_variable("$a", 4.5);
+  mruby.def_function("myfunction", &f);
+  mruby.def_function("f2", &f2);
   auto obj = mruby.execute(script.c_str());
-
-  if(obj.convertible_to<int>()) {
-    std::cout << "Int value : " << obj.as<int>() << std::endl;
-  }
-  if(obj.convertible_to<float>()) {
-    std::cout << "Float value : " << obj.as<float>() << std::endl;
-  }
-  if(obj.convertible_to<bool>()) {
-    std::cout << "Bool value : " << obj.as<bool>() << std::endl;
-  }
-  if(obj.convertible_to<std::string>()) {
-    std::cout << "String value : " << obj.as<std::string>() << std::endl;
-  }
 }

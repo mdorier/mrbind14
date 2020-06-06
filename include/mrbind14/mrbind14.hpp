@@ -41,19 +41,19 @@ class object {
 
   template<typename T>
   object(mrb_state* mrb, T&& t)
-  : m_value(value_from_cpp(t)) {}
+  : m_value(detail::value_from_cpp(t)) {}
 
   template<typename T>
   bool convertible_to() const {
-    return check<T>(m_value);
+    return detail::check_type<T>(m_value);
   }
 
   template<typename T>
   T as() const {
-    if(!check<T>(m_value)) {
+    if(!detail::check_type<T>(m_value)) {
       throw std::runtime_error("Invalid type"); // XXX
     }
-    return value_to_cpp<T>(m_value);
+    return detail::value_to_cpp<T>(m_value);
   }
 
   template<typename Function>
@@ -63,86 +63,6 @@ class object {
   }
 
   private:
-
-  /// Converts a C++ integer (int, short, long, etc.) into a ruby value
-  template<typename Integer>
-  static typename std::enable_if<
-                    std::is_integral<typename std::decay<Integer>::type>::value
-                    && !std::is_same<typename std::decay<Integer>::type, bool>::value,
-  mrb_value>::type
-  value_from_cpp(mrb_state*, Integer i) {
-    return mrb_fixnum_value(i);
-  }
-
-  /// Converts a C++ float (float, double, etc.) into a ruby value
-  template<typename Float>
-  static typename std::enable_if<std::is_floating_point<Float>::value, mrb_value>::type
-  value_from_cpp(mrb_state* mrb, Float f) {
-    return mrb_float_value(mrb, f);
-  }
-
-  /// Checks that the ruby value is convertible to a C++ numeric type
-  template<typename Numeric>
-  static typename std::enable_if<
-                    std::is_arithmetic<Numeric>::value
-                    && !std::is_same<Numeric, bool>::value,
-                  bool>::type
-  check(mrb_value v) {
-    return mrb_fixnum_p(v) || mrb_float_p(v);
-  }
-
-  /// Converts a ruby value into an numeric type
-  template<typename Numeric>
-  static typename std::enable_if<
-                    std::is_arithmetic<Numeric>::value
-                    && !std::is_same<Numeric, bool>::value,
-  Numeric>::type
-  value_to_cpp(mrb_value v) {
-    return mrb_fixnum_p(v) ? mrb_fixnum(v) : mrb_float(v);
-  }
-
-  /// Converts a C++ null-terminated string into a ruby value
-  static mrb_value value_from_cpp(mrb_state* mrb, const char* str) {
-    return mrb_str_new_cstr(mrb, str);
-  }
-
-  /// Converts a C++ string into a ruby value
-  static mrb_value value_from_cpp(mrb_state* mrb, const std::string& str) {
-    return value_from_cpp(mrb, str.c_str());
-  }
-
-  /// Checks that the ruby value can be converted into a C++ string
-  template<typename String>
-  static typename std::enable_if<std::is_same<String, std::string>::value, bool>::type
-  check(mrb_value v) {
-    return mrb_string_p(v);
-  }
-
-  /// Converts a ruby value into a C++ string
-  template<typename String>
-  static typename std::enable_if<std::is_same<String, std::string>::value, std::string>::type
-  value_to_cpp(mrb_value v) {
-    return std::string(RSTRING_PTR(v), RSTRING_LEN(v));
-  }
-
-  /// Converts a C++ bool into a ruby bool
-  static mrb_value value_from_cpp(mrb_state* mrb, bool b) {
-    return b ? mrb_true_value() : mrb_false_value();
-  }
-
-  /// Checks that the ruby value can be converted into a boolean
-  template<typename Bool>
-  static constexpr typename std::enable_if<std::is_same<Bool, bool>::value, bool>::type
-  check(mrb_value v) {
-    return true;
-  }
-
-  /// Converts a ruby value into a bool
-  template<typename Bool>
-  static constexpr typename std::enable_if<std::is_same<Bool, bool>::value, bool>::type
-  value_to_cpp(mrb_value v) {
-    return mrb_test(v);
-  }
 
   mrb_value m_value;
 
@@ -170,7 +90,7 @@ class klass {
     mrb_define_const(m_mrb,
                      m_class,
                      name,
-                     object::value_from_cpp(m_mrb, val));
+                     detail::value_from_cpp(m_mrb, val));
     return *this;
   }
 
@@ -264,7 +184,7 @@ class module {
     mrb_define_const(m_mrb,
                      m_module,
                      name,
-                     object::value_from_cpp(m_mrb, val));
+                     detail::value_from_cpp(m_mrb, val));
     return *this;
   }
 
@@ -310,7 +230,7 @@ class gem {
 
   template<typename Function, typename ... Extra>
   gem& def_function(const char* name, Function&& function, const Extra&... extra) {
-    detail::def_function(m_mrb, name, std::forward<Function>(function), extra...);
+    detail::def_function(m_mrb, m_mrb->kernel_module, name, std::forward<Function>(function), extra...);
     return *this;
   }
 
@@ -345,7 +265,7 @@ class gem {
   gem& def_const(const char* name, const ValueType& val) {
     mrb_define_const(m_mrb,
                      m_mrb->kernel_module,
-                     name, object::value_from_cpp(m_mrb, val));
+                     name, detail::value_from_cpp(m_mrb, val));
     return *this;
   }
 
@@ -393,7 +313,7 @@ class interpreter : public gem {
   template<typename ValueType>
   void set_global_variable(const char* name, const ValueType& val) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
-    mrb_gv_set(m_mrb, sym, object::value_from_cpp<ValueType>(m_mrb, val));
+    mrb_gv_set(m_mrb, sym, detail::value_from_cpp<ValueType>(m_mrb, val));
   }
 
   /**
@@ -407,7 +327,7 @@ class interpreter : public gem {
   template<typename ValueType>
   ValueType get_global_variable(const char* name) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
-    return object::value_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
+    return detail::value_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
   }
 
   /**
