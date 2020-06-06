@@ -216,7 +216,9 @@ class gem {
   public:
 
   gem(mrb_state* mrb)
-  : m_mrb(mrb) {}
+  : m_mrb(mrb) {
+    detail::init_cpp_class_name(mrb);
+  }
 
   gem(const gem&) = default;
 

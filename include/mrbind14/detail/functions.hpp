@@ -38,10 +38,10 @@ inline void raise_invalid_type(
     const char* required_type_name,
     mrb_value value) {
   const char * argument_class_name = mrb_obj_classname(mrb, value);
-  mrb_raisef(mrb, E_TYPE_ERROR, "Cannot convert %S into %S, argument %S(%S)",
+  mrb_raisef(mrb, E_TYPE_ERROR, "Cannot convert %S into %S (argument %S)",
              mrb_str_new_cstr(mrb, argument_class_name),
              mrb_str_new_cstr(mrb, required_type_name),
-             mrb_fixnum_value(parameter_index + 1), value);
+             mrb_fixnum_value(parameter_index + 1));
 }
 
 /// Helper structure to check the types of a series of values
@@ -57,7 +57,8 @@ template<class P>
 struct type_checker<P> {
   static void check(mrb_state* mrb, int i, mrb_value* args) {
     if(!check_type<P>(args[i])) {
-      raise_invalid_type(mrb, i, "???", args[i]); //XXX
+      auto type_name = get_cpp_class_name<P>(mrb);
+      raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
     }
   }
 };
@@ -66,7 +67,8 @@ template<class P1, class ... P>
 struct type_checker<P1, P...> {
   static void check(mrb_state* mrb, int i, mrb_value* args) {
     if(!check_type<P1>(args[i])) {
-      raise_invalid_type(mrb, i, "???", args[i]); //XXX
+      auto type_name = get_cpp_class_name<P1>(mrb);
+      raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
     } else {
       type_checker<P...>::check(mrb, i+1, args);
     }
