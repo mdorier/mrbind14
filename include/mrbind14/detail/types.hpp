@@ -149,6 +149,7 @@ namespace detail {
     register_cpp_class_name<unsigned long long>(mrb, "unsigned long long");
     register_cpp_class_name<float>(mrb, "float");
     register_cpp_class_name<double>(mrb, "double");
+    register_cpp_class_name<long double>(mrb, "long double");
   }
 
 }
