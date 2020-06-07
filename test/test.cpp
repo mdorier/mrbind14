@@ -24,6 +24,9 @@ void f() {
 double f2(int x, float y) {
   return y*x*x;
 }
+std::string f3(const std::string& s) {
+  return "Hello World "s + s;
+}
 
 int main(int argc, char** argv) {
   if(argc != 2) {
@@ -45,6 +48,7 @@ int main(int argc, char** argv) {
   mruby.set_global_variable("$a", 4.5);
   mruby.def_function("myfunction", &f);
   mruby.def_function("f2", &f2);
+  mruby.def_function("f3", &f3);
   std::function<double(int,float)> fun = [](int x, float y) -> double {
         return x+y;
       };

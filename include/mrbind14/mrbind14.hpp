@@ -6,6 +6,7 @@
 #ifndef MRBIND14_HPP_
 #define MRBIND14_HPP_
 
+#include <mrbind14/detail/class.hpp>
 #include <mrbind14/detail/functions.hpp>
 #include <mruby.h>
 #include <mruby/string.h>
@@ -148,13 +149,13 @@ class module {
 
   template<typename Function, typename ... Extra>
   module& def_function(const char* name, Function&& function, const Extra&... extra) {
-    // TODO
+    detail::def_function(m_mrb, m_module, name, std::forward<Function>(function), extra...);
     return *this;
   }
 
-  template<typename CppClass = void>
+  template<typename CppClass, typename CppParentClass = void>
   klass<CppClass> def_class(const char* name) {
-    // TODO
+    RClass* cls = detail::def_class<CppClass, CppParentClass>(m_mrb, m_module, name);
     return klass<CppClass>(m_mrb, name);
   }
 
@@ -230,16 +231,41 @@ class gem {
 
   virtual ~gem() = default;
 
+  /**
+   * @brief Defines a function at global scope. The function may be a function pointer
+   * or an std::function<Ret(Params...)> objects. Lambdas (or any object with parenthesis
+   * operator) may be used by first casting them into an std::function.
+   *
+   * @tparam Function Function type.
+   * @tparam Extra Extra options.
+   * @param name Name of the function.
+   * @param function Function pointer or std::function object.
+   * @param extra Extra argument.
+   *
+   * @return A reference to the current gem.
+   */
   template<typename Function, typename ... Extra>
   gem& def_function(const char* name, Function&& function, const Extra&... extra) {
     detail::def_function(m_mrb, m_mrb->kernel_module, name, std::forward<Function>(function), extra...);
     return *this;
   }
 
+  /**
+   * @brief Exposes a C++ class as visible to Ruby at global scope.
+   * Since Ruby enables only single-class inheritence, a single ParentCppClass
+   * type may be provided. If provided, the parent class must have been exposed
+   * to MRuby first.
+   *
+   * @tparam CppClass Type of C++ class.
+   * @tparam ParentCppClass Parent C++ class.
+   * @param name Name of the class.
+   *
+   * @return A handle to the newly created class.
+   */
   template<typename CppClass, typename ParentCppClass = void>
   klass<CppClass> def_class(const char* name) {
-    // TODO
-    return klass<CppClass>(m_mrb, name);
+    RClass* cls = detail::def_class<CppClass, ParentCppClass>(m_mrb, m_mrb->kernel_module, name);
+    return klass<CppClass>(m_mrb, cls, name);
   }
 
   /**
@@ -277,22 +303,42 @@ class gem {
 
 };
 
+/**
+ * @brief The interpreter object enables creating an MRuby state
+ * and executing scripts from it. It extends the gem class, which
+ * enables it to be extended with new modules, classes, and functions.
+ */
 class interpreter : public gem {
 
   public:
 
+  /**
+   * @brief Constructor. Creates a new MRuby state.
+   */
   interpreter()
   : gem(mrb_open()) {}
 
+  /**
+   * @brief The copy-constructor is deleted.
+   */
   interpreter(const interpreter&) = delete;
 
+  /**
+   * @brief Move constructor.
+   */
   interpreter(interpreter&& other)
   : gem(std::move(other)) {
     other.m_mrb = nullptr;
   }
 
+  /**
+   * @brief The copy-assignment operator is deleted.
+   */
   interpreter& operator=(const interpreter&) = delete;
 
+  /**
+   * @brief Move-assignment operator.
+   */
   interpreter& operator=(interpreter&& other) {
     if(m_mrb == other.m_mrb) return *this;
     if(m_mrb) mrb_close(m_mrb);
@@ -301,6 +347,10 @@ class interpreter : public gem {
     return *this;
   }
 
+  /**
+   * @brief The destructor will close the underlying Mruby state
+   * and free up its resources.
+   */
   ~interpreter() {
     if(m_mrb) mrb_close(m_mrb);
   }
