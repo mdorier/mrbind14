@@ -16,10 +16,27 @@ namespace mrbind14 {
 
 namespace detail {
 
-template<typename CppClass, typename CppParentClass = void>
-RClass* def_class(mrb_state* mrb, RClass* module, const char* name) {
+/// Class with no parent Cpp class
+template<typename CppClass, typename CppParentClass>
+std::enable_if_t<
+        std::is_same<CppParentClass, void>::value,
+  RClass*>
+def_class(mrb_state* mrb, RClass* module, const char* name) {
+  RClass *cls = mrb_define_class_under(mrb, module, name, mrb->object_class);
+  register_cpp_class_name<CppClass>(mrb, name);
+  return cls;
+}
+
+/// Class with parent Cpp class
+template<typename CppClass, typename CppParentClass>
+std::enable_if_t<
+        !std::is_same<CppParentClass, void>::value,
+  RClass*>
+def_class(mrb_state* mrb, RClass* module, const char* name) {
   // TODO
-  return nullptr;
+  RClass *cls = mrb_define_class_under(mrb, module, name, mrb->object_class);
+  register_cpp_class_name<CppClass>(mrb, name);
+  return cls;
 }
 
 }

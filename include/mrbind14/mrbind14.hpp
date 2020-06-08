@@ -24,6 +24,7 @@ class exception;
 template<typename CppClass, typename ... Options> class klass;
 class module;
 class object;
+template<typename ... Args> struct init;
 
 class object {
 
@@ -78,6 +79,9 @@ class exception : public object, public std::exception {
   }
 };
 
+template<typename ... Args>
+struct init {};
+
 template<typename CppClass, typename ... Options>
 class klass {
 
@@ -103,32 +107,35 @@ class klass {
 
   template<typename Function, typename ... Extra>
   klass& def_class_method(const char* name, Function&& function, const Extra&... extra) {
-    // TODO
+    detail::def_function(m_mrb, m_class, name, std::forward<Function>(function), extra...);
     return *this;
   }
 
-  template<typename Type>
-  klass& def_attr_reader(const char* name, const Type CppClass::*member) {
-    // TODO
-    return *this;
+  template<typename Type, typename ... Extra>
+  klass& def_attr_reader(const char* name, const Type CppClass::*member, const Extra& ... extra) {
+    std::function<const Type& (const CppClass&)> reader = [&](const CppClass& obj) {
+      return (&obj)->member;
+    };
+    return def_method(name, reader, extra...);
   }
 
-  template<typename Type>
-  klass& def_attr_writer(const char* name, const Type CppClass::*member) {
-    // TODO
-    return *this;
+  template<typename Type, typename ... Extra>
+  klass& def_attr_writer(const char* name, Type CppClass::*member, const Extra& ... extra) {
+    std::function<void(CppClass&)> writer = [&](CppClass& obj, const Type& x) {
+      (&obj)->member = x;
+    };
+    auto function_name = std::string(name)+"=";
+    return def_method(function_name.c_str(), writer, extra...);
   }
 
-  template<typename Type>
-  klass& def_attr_accessor(const char* name, const Type CppClass::*member) {
-    return def_attr_reader<Type>(name, member).template def_attr_writer<Type>(name, member);
+  template<typename Type, typename ... Extra>
+  klass& def_attr_accessor(const char* name, Type CppClass::*member, const Extra& ... extra) {
+    return def_attr_reader<Type>(name, member, extra...).template def_attr_writer<Type>(name, member, extra...);
   }
 
-  klass& include_module(const module& mod) {
-    // TODO
-    //mrb_include_module(m_mrb, m_class, mod.m_module);
-    return *this;
-  }
+  klass& include_module(const module& mod);
+
+  klass& prepend_module(const module& mod);
 
   private:
 
@@ -144,6 +151,7 @@ class klass {
 class module {
   
   friend class gem;
+  template<typename CppClass, typename... Options> friend class klass;
 
   public:
 
@@ -211,6 +219,18 @@ class module {
   : m_mrb(mrb), m_name(name), m_module(mod) {}
 
 };
+
+template<typename CppClass, typename ... Options>
+klass<CppClass, Options...>& klass<CppClass, Options...>::include_module(const module& mod) {
+  mrb_include_module(m_mrb, m_class, mod.m_module);
+  return *this;
+}
+
+template<typename CppClass, typename ... Options>
+klass<CppClass, Options...>& klass<CppClass, Options...>::prepend_module(const module& mod) {
+  mrb_prepend_module(m_mrb, m_class, mod.m_module);
+  return *this;
+}
 
 class gem {
 

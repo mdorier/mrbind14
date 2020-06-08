@@ -21,6 +21,7 @@ inline void mrb_define_class_method_raw(mrb_state *mrb, struct RClass *c, mrb_sy
   mrb_define_method_raw(mrb, ((RObject*)c)->c, mid, method);
 }
 
+/// Function to raise an "invalid number of arguments" exception
 inline void raise_invalid_nargs(
     mrb_state *mrb,
     mrb_value func_name,
@@ -32,6 +33,7 @@ inline void raise_invalid_nargs(
              mrb_fixnum_value(nparam));
 }
 
+/// Function to raise an "invalid argument type" exception
 inline void raise_invalid_type(
     mrb_state *mrb,
     int parameter_index,
@@ -43,6 +45,61 @@ inline void raise_invalid_type(
              mrb_str_new_cstr(mrb, required_type_name),
              mrb_fixnum_value(parameter_index + 1));
 }
+
+/// Removes the class component in member function types,
+/// e.g. remove_class<R (C::*)(A...)>::type = R(A...)
+template<typename T>
+struct remove_class {};
+
+template<typename C, typename R, typename... A>
+struct remove_class<R (C::*)(A...)> {
+    typedef R type(A...);
+};
+
+template<typename C, typename R, typename... A>
+struct remove_class<R (C::*)(A...) const> {
+    typedef R type(A...);
+};
+
+/// Extract the type of the operator() from the type of the object,
+/// e.g. strip_function_object<std::function<R(A...)>>::type =
+///      R (std::function<R(A...)>::*operator())(A...)
+template <typename F> struct strip_function_object {
+    using type = typename remove_class<decltype(&F::operator())>::type;
+};
+
+/// Extracts the function signature from a function, function pointer or lambda.
+template <typename Function, typename F = typename std::remove_reference<Function>::type>
+using function_signature = std::conditional<
+    std::is_function<F>::value,
+    F,
+    typename std::conditional<
+        std::is_pointer<F>::value || std::is_member_pointer<F>::value,
+        typename std::remove_pointer<F>::type,
+        typename strip_function_object<F>::type
+    >::type
+>;
+
+/// Checks if the provided type is std::function<...>
+template<typename T>
+struct is_std_function_object {
+    static constexpr bool value = false;
+};
+
+template<typename R, typename ... A>
+struct is_std_function_object<std::function<R(A...)>> {
+    static constexpr bool value = true;
+};
+
+/// Helper type trait to detect function pointers
+template<typename T>
+struct is_function_pointer
+{
+  static const bool value =
+    std::is_pointer<T>::value ?
+    std::is_function<typename std::remove_pointer<T>::type>::value :
+    false;
+};
 
 /// Helper structure to check the types of a series of values
 template<class ... P>
@@ -79,16 +136,6 @@ template<class ... P>
 void check_arg_types(mrb_state* mrb, mrb_value* args) {
   type_checker<P...>::check(mrb, 0, args);
 }
-
-/// Helper type trait to detect function pointers
-template<typename T>
-struct is_function_pointer
-{
-  static const bool value =
-    std::is_pointer<T>::value ?
-    std::is_function<typename std::remove_pointer<T>::type>::value :
-    false;
-};
 
 /// Helper structure that makes a function return the ruby nil
 /// value if the C function returns void
@@ -216,12 +263,13 @@ def_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function,
   }
 }
 
+/// Defines a function using an std::function object
 template<typename R, typename ... P, typename ... Extra>
 void def_function(mrb_state* mrb, RClass* mod, const char* name, 
-             const std::function<R(P...)>& function, const Extra&... extra) {
+             std::function<R(P...)>&& function, const Extra&... extra) {
   mrb_sym func_name_s = mrb_intern_cstr(mrb, name);
   void* p = mrb_malloc_simple(mrb, sizeof(function));
-  auto fun_ptr = new(p) std::function<R(P...)>(function);
+  auto fun_ptr = new(p) std::function<R(P...)>(std::move(function));
   mrb_value env[] = {
     mrb_cptr_value(mrb, static_cast<void*>(fun_ptr)),
     mrb_symbol_value(func_name_s),
@@ -235,6 +283,25 @@ void def_function(mrb_state* mrb, RClass* mod, const char* name,
   } else {
     mrb_define_class_method_raw(mrb, mod, func_name_s, method);
   }
+}
+
+/// Defines a function using an std::function object
+template<typename R, typename ... P, typename ... Extra>
+void def_function(mrb_state* mrb, RClass* mod, const char* name, 
+             const std::function<R(P...)>& function, const Extra&... extra) {
+  def_function(mrb, mod, name, std::function<R(P...)>(function), extra...);
+}
+
+/// Defines a function using any object with a parenthesis operator (e.g. lambdas)
+template<typename Function, typename ... Extra>
+std::enable_if_t<!is_std_function_object<Function>::value
+               && !is_function_pointer<Function>::value,
+  void>
+def_function(mrb_state* mrb, RClass* mod, const char* name,
+             Function&& function, const Extra&... extra) {
+  using function_type = std::function<
+      typename function_signature<std::decay_t<Function>>::type>;
+  def_function(mrb, mod, name, function_type(std::forward<Function>(function)), extra...);
 }
 
 }
