@@ -3,9 +3,16 @@ project (mrbind14 CXX)
 
 set (CMAKE_CXX_STANDARD 14)
 
+set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
+     "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+
 option(ENABLE_TESTS "Build tests. May require CppUnit_ROOT" OFF)
 
 include_directories (${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+find_package (Mruby REQUIRED)
+include_directories (${Mruby_INCLUDE_DIR})
 
 find_package (CppUnit)
 if (CPPUNIT_FOUND)

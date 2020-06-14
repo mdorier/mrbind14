@@ -12,8 +12,12 @@
 
 namespace mrbind14 {
 
+class object;
+
 class module {
   
+  friend class object;
+
   public:
 
   template<typename Function, typename ... Extra>

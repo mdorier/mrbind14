@@ -36,7 +36,7 @@ std::string get_cpp_class_name(mrb_state* mrb) {
 }
 
 /// This function sets up the $__cpp_class_names__ global variable in the mrb_state
-inline void init_cpp_class_name(mrb_state* mrb) {
+inline void init_cpp_class_names(mrb_state* mrb) {
   mrb_sym sym = mrb_intern_lit(mrb, "$__cpp_class_names__");
   mrb_value hash = mrb_gv_get(mrb, sym);
   if(!mrb_nil_p(hash)) return;

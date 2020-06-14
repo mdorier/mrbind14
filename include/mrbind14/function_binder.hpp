@@ -14,7 +14,7 @@ template<typename Function>
 struct make_function_return_mrb_value {};
 
 template<typename ... P>
-struct make_function_return_mrb_value<void(*)(P...)> {
+struct make_function_return_mrb_value<void(P...)> {
   static mrb_value call(mrb_state*, void(*function)(P...), P&&... params) {
     function(std::forward<P>(params)...);
     return mrb_nil_value();
@@ -22,7 +22,7 @@ struct make_function_return_mrb_value<void(*)(P...)> {
 };
 
 template<typename R, typename ... P>
-struct make_function_return_mrb_value<R(*)(P...)> {
+struct make_function_return_mrb_value<R(P...)> {
   static mrb_value call(mrb_state* mrb, R(*function)(P...), P&&... params) {
     return cpp_to_mrb<R>(mrb, function(std::forward<P>(params)...) );
   }
@@ -48,7 +48,7 @@ template<typename Function>
 struct function_binder {};
 
 template<typename R, typename ... P>
-struct function_binder<R (*)(P...)> {
+struct function_binder<R(P...)> {
   
   static constexpr int NPARAM = sizeof...(P);
 
@@ -58,7 +58,7 @@ struct function_binder<R (*)(P...)> {
       R(*fp)(P...),
       mrb_value* args,
       std::index_sequence<I...>) {
-    return make_function_return_mrb_value<R (*)(P...)>::call(
+    return make_function_return_mrb_value<R(P...)>::call(
         mrb, fp, type_converter<P>::convert(mrb, args[I])...);
   }
 
@@ -117,14 +117,14 @@ struct function_binder<std::function<R(P...)>> {
 
 /// Defines a function in a provided module, using a C-style function pointer
 template<typename Function, typename ... Extra>
-typename std::enable_if<is_function_pointer<Function>::value, void>::type
-bind_function(mrb_state* mrb, RClass* mod, const char* name, Function&& function, const Extra&... extra) {
+typename std::enable_if<std::is_function<std::remove_pointer_t<Function>>::value, void>::type
+bind_function(mrb_state* mrb, RClass* mod, const char* name, Function function, const Extra&... extra) {
   mrb_sym func_name_s = mrb_intern_cstr(mrb, name);
   mrb_value env[] = {
     mrb_cptr_value(mrb, (void*)function),
     mrb_symbol_value(func_name_s),
   };
-  RProc* proc = mrb_proc_new_cfunc_with_env(mrb, function_binder<Function>::call, 2, env);
+  RProc* proc = mrb_proc_new_cfunc_with_env(mrb, function_binder<std::remove_pointer_t<Function>>::call, 2, env);
   mrb_method_t method;
   MRB_METHOD_FROM_PROC(method, proc);
   if(mod == mrb->kernel_module) {
@@ -168,11 +168,11 @@ void bind_function(mrb_state* mrb, RClass* mod, const char* name,
 
 /// Defines a function using any object with a parenthesis operator (e.g. lambdas)
 template<typename Function, typename ... Extra>
-std::enable_if_t<!is_std_function_object<Function>::value
-               && !is_function_pointer<Function>::value,
+std::enable_if_t< !is_std_function_object<std::decay_t<Function>>::value
+               && !std::is_function<std::remove_pointer_t<Function>>::value,
   void>
 bind_function(mrb_state* mrb, RClass* mod, const char* name,
-             Function&& function, const Extra&... extra) {
+             Function function, const Extra&... extra) {
   using function_type = std::function<function_signature_t<std::decay_t<Function>>>;
   bind_function(mrb, mod, name, function_type(std::forward<Function>(function)), extra...);
 }

@@ -17,6 +17,25 @@ namespace mrbind14 {
 template<typename T, typename Enable = void>
 struct type_binder;
 
+template<typename Value>
+struct type_binder<Value,
+  std::enable_if_t<
+    std::is_same<std::decay_t<Value>, mrb_value>::value>> {
+
+  static constexpr mrb_value cpp_to_mrb(mrb_state* mrb, mrb_value val) {
+    return val;
+  }
+
+  static constexpr auto mrb_to_cpp(mrb_state* mrb, mrb_value val) {
+    return val;
+  }
+
+  static constexpr bool check_type(mrb_state* mrb, mrb_value val) {
+    return true;
+  }
+
+};
+
 template<typename Integer>
 struct type_binder<Integer, std::enable_if_t<is_integer_not_bool<Integer>::value>> {
 

@@ -6,9 +6,9 @@
 #ifndef MRBIND14_INTERPRETER_H_
 #define MRBIND14_INTERPRETER_H_
 
+#include <mrbind14/object.hpp>
 #include <mrbind14/module.hpp>
 #include <mrbind14/exception.hpp>
-#include <mrbind14/object.hpp>
 #include <mruby.h>
 #include <mruby/variable.h>
 #include <string>
@@ -29,7 +29,9 @@ class interpreter : public module {
    * @brief Constructor. Creates a new MRuby state.
    */
   interpreter()
-  : module(mrb_open()) {}
+  : module(mrb_open()) {
+    init_cpp_class_names(m_mrb);
+  }
 
   /**
    * @brief The copy-constructor is deleted.
@@ -76,9 +78,9 @@ class interpreter : public module {
    * @param val Value.
    */
   template<typename ValueType>
-  void set_global_variable(const char* name, const ValueType& val) {
+  void set_global(const char* name, const ValueType& val) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
-    mrb_gv_set(m_mrb, sym, cpp_to_mrb<ValueType>(m_mrb, val));
+    mrb_gv_set(m_mrb, sym, cpp_to_mrb(m_mrb, val));
   }
 
   /**
@@ -90,7 +92,7 @@ class interpreter : public module {
    * @return The value associated with a global variable.
    */
   template<typename ValueType>
-  ValueType get_global_variable(const char* name) {
+  ValueType get_global(const char* name) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
     return mrb_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
   }
