@@ -46,7 +46,7 @@ class object {
 
     mrb_state* mrb() const { return m_mrb; }
 
-    mrb_value native() const { return m_value; }
+    mrb_value value() const { return m_value; }
 
   private:
 
