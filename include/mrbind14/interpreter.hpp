@@ -10,6 +10,7 @@
 #include <mrbind14/module.hpp>
 #include <mrbind14/exception.hpp>
 #include <mruby.h>
+#include <mruby/compile.h>
 #include <mruby/variable.h>
 #include <string>
 #include <exception>
@@ -29,9 +30,7 @@ class interpreter : public module {
    * @brief Constructor. Creates a new MRuby state.
    */
   interpreter()
-  : module(mrb_open()) {
-    init_cpp_class_names(m_mrb);
-  }
+  : module(mrb_open()) {}
 
   /**
    * @brief The copy-constructor is deleted.
@@ -80,7 +79,7 @@ class interpreter : public module {
   template<typename ValueType>
   void set_global(const char* name, const ValueType& val) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
-    mrb_gv_set(m_mrb, sym, cpp_to_mrb(m_mrb, val));
+    mrb_gv_set(m_mrb, sym, detail::cpp_to_mrb(m_mrb, val));
   }
 
   /**
@@ -94,7 +93,7 @@ class interpreter : public module {
   template<typename ValueType>
   ValueType get_global(const char* name) {
     mrb_sym sym = mrb_intern_static(m_mrb, name, strlen(name));
-    return mrb_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
+    return detail::mrb_to_cpp<ValueType>(m_mrb, mrb_gv_get(m_mrb, sym));
   }
 
   /**

@@ -70,7 +70,7 @@ struct strip_function_object {
 };
 
 /// Extracts the function signature from a function, function pointer or lambda.
-template<typename Function, typename F = typename std::remove_reference<Function>::type>
+template<typename Function, typename F = std::remove_reference_t<Function>>
 using function_signature = std::conditional<
     std::is_function<F>::value,
     F,

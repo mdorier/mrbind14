@@ -7,6 +7,7 @@ set (CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH}
      "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 
+add_definitions(-g)
 option(ENABLE_TESTS "Build tests. May require CppUnit_ROOT" OFF)
 
 include_directories (${CMAKE_CURRENT_SOURCE_DIR}/include)

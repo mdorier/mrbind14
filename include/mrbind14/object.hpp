@@ -77,7 +77,7 @@ object::object(const module& mod, T&& val)
 
 template<typename T>
 auto object::as() const {
-  return mrb_to_cpp<T>(m_mrb, m_value);
+  return detail::mrb_to_cpp<T>(m_mrb, m_value);
 }
 
 }

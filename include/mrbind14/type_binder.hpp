@@ -9,6 +9,8 @@
 
 namespace mrbind14 {
 
+namespace detail {
+
 /// The type_binder structure provides three static functions:
 /// - cpp_to_mrb converts a C++ value to an mrb_value
 /// - mrb_to_cpp converts an mrb_value to a C++ value
@@ -97,11 +99,14 @@ struct type_binder<CString, std::enable_if_t<is_c_style_string<CString>::value>>
   }
 
   static auto mrb_to_cpp(mrb_state* mrb, mrb_value val) {
+    if(val.tt == MRB_TT_SYMBOL) {
+		val = mrb_sym2str(mrb, val.value.i);
+	}
     return std::string(RSTRING_PTR(val), RSTRING_LEN(val));
   }
 
   static bool check_type(mrb_state* mrb, mrb_value val) {
-    return mrb_string_p(val);
+    return mrb_string_p(val) || mrb_symbol_p(val);
   }
 
 };
@@ -117,11 +122,14 @@ struct type_binder<String, std::enable_if_t<is_string<String>::value>> {
   }
 
   static auto mrb_to_cpp(mrb_state* mrb, mrb_value val) {
+    if(val.tt == MRB_TT_SYMBOL) {
+		val = mrb_sym2str(mrb, val.value.i);
+	}
     return std::string(RSTRING_PTR(val), RSTRING_LEN(val));
   }
 
   static bool check_type(mrb_state* mrb, mrb_value val) {
-    return mrb_string_p(val);
+    return mrb_string_p(val) || mrb_symbol_p(val);
   }
 
 };
@@ -148,35 +156,44 @@ struct type_checker {};
 
 template<>
 struct type_checker<> {
-  static void check(mrb_state* mrb, int i, mrb_value* args) {}
+  static bool check(mrb_state* mrb, int i, mrb_value* args, bool should_throw) {
+    return true;
+  }
 };
 
 template<class P>
 struct type_checker<P> {
-  static void check(mrb_state* mrb, int i, mrb_value* args) {
+  static bool check(mrb_state* mrb, int i, mrb_value* args, bool should_throw) {
     if(!type_binder<P>::check_type(mrb, args[i])) {
-      auto type_name = get_cpp_class_name<P>(mrb);
-      raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
+      if(should_throw) {
+        auto type_name = get_cpp_class_name<P>(mrb);
+        raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
+      }
+      return false;
     }
+    return true;
   }
 };
 
 template<class P1, class ... P>
 struct type_checker<P1, P...> {
-  static void check(mrb_state* mrb, int i, mrb_value* args) {
+  static bool check(mrb_state* mrb, int i, mrb_value* args, bool should_throw) {
     if(!type_binder<P1>::check_type(mrb, args[i])) {
-      auto type_name = get_cpp_class_name<P1>(mrb);
-      raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
+      if(should_throw) {
+        auto type_name = get_cpp_class_name<P1>(mrb);
+        raise_invalid_type(mrb, i, type_name.c_str(), args[i]);
+      }
+      return false;
     } else {
-      type_checker<P...>::check(mrb, i+1, args);
+      return type_checker<P...>::check(mrb, i+1, args, should_throw);
     }
   }
 };
 
 /// Checks that a C-style array of arguments matches the provided types
 template<class ... P>
-void check_arg_types(mrb_state* mrb, mrb_value* args) {
-  type_checker<P...>::check(mrb, 0, args);
+bool check_arg_types(mrb_state* mrb, mrb_value* args, bool should_throw=true) {
+  return type_checker<P...>::check(mrb, 0, args, should_throw);
 }
 
 /// Helper structure for parameter pack expension in function_binder.hpp
@@ -187,11 +204,15 @@ struct type_converter {
   }
 };
 
-}
+} // namespace detail
+
+} // namespace mrbind14
 
 #include <mrbind14/object.hpp>
 
 namespace mrbind14 {
+
+namespace detail {
 
 template<typename Object>
 struct type_binder<Object, std::enable_if_t<std::is_same<std::decay_t<Object>,object>::value>> {
@@ -210,6 +231,8 @@ struct type_binder<Object, std::enable_if_t<std::is_same<std::decay_t<Object>,ob
 
 };
 
-}
+} // namespace detail
+
+} // namespace mrbind14
 
 #endif
